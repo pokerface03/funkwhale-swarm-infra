@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  postgres-primary:
+    image: bitnami/postgresql-repmgr:15
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD_FILE=/run/secrets/postgres_root_password
+      - POSTGRESQL_USERNAME=replicator
+      - POSTGRESQL_PASSWORD_FILE=/run/secrets/replicator_password
+      - POSTGRESQL_DATABASE=mydatabase
+      - REPMGR_PARTNER_NODES=postgres-primary-{{.Task.Slot}},postgres-replica-{{.Task.Slot}}
+      - REPMGR_NODE_NAME=postgres-primary-{{.Task.Slot}}
+      - REPMGR_NODE_NETWORK_NAME=postgres-primary
+      - REPMGR_PRIMARY_HOST=postgres-primary
+      - REPMGR_PASSWORD_FILE=/run/secrets/repmgr_password
+    volumes:
+      - postgres-primary-data:/bitnami/postgresql
+    networks:
+      - postgres-cluster-net
+    secrets:
+      - postgres_root_password
+      - replicator_password
+      - repmgr_password
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.labels.pgcluster==true
+      restart_policy:
+        condition: on-failure
+
+  postgres-replica:
+    image: bitnami/postgresql-repmgr:15
+    environment:
+      - POSTGRESQL_POSTGRES_PASSWORD_FILE=/run/secrets/postgres_root_password
+      - POSTGRESQL_USERNAME=replicator
+      - POSTGRESQL_PASSWORD_FILE=/run/secrets/replicator_password
+      - POSTGRESQL_DATABASE=mydatabase
+      - REPMGR_PARTNER_NODES=postgres-primary-{{.Task.Slot}},postgres-replica-{{.Task.Slot}}
+      - REPMGR_NODE_NAME=postgres-replica-{{.Task.Slot}}
+      - REPMGR_NODE_NETWORK_NAME=postgres-replica
+      - REPMGR_PRIMARY_HOST=postgres-primary
+      - REPMGR_PASSWORD_FILE=/run/secrets/repmgr_password
+    volumes:
+      - postgres-replica-data:/bitnami/postgresql
+    networks:
+      - postgres-cluster-net
+    secrets:
+      - postgres_root_password
+      - replicator_password
+      - repmgr_password
+    deploy:
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - node.labels.pgcluster==true
+      restart_policy:
+        condition: on-failure
+
+networks:
+  postgres-cluster-net:
+    driver: overlay
+
+volumes:
+  postgres-primary-data:
+  postgres-replica-data:
+
+secrets:
+  postgres_root_password:
+    file: /home/fedlab18/keys/pgcluster/secrets/postgres_root_password
+  replicator_password:
+    file: /home/fedlab18/keys/pgcluster/secrets/replicator_password
+  repmgr_password:
+    file: /home/fedlab18/keys/pgcluster/secrets/repmgr_password

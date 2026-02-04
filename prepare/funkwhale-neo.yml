@@ -1,0 +1,64 @@
+---
+- name: Set up Funkwhale environment and deployment (steps 3-6 with Docker for steps 4 & 5)
+  hosts: "{{inv}}"         # Runs on hosts defined by the 'inv' variable
+  gather_facts: no         # Disable system facts gathering for speed
+  become: yes
+  remote_user: "{{username}}"  # Connect as user defined by the 'username' variable
+  vars:
+    dockeruser: "{{dockeruser}}"
+    # Project directory path
+    volume_main_data_path: "/var/fedlab/funkwhale.fedlab" # Adjust this according to your needs
+    directories:
+      - "data/postgres"
+      - "data/redis"
+      - "data/typesense/data"
+      - "funkwhale/data/music"
+      - "funkwhale/data/media"
+      - "funkwhale/data/static"
+      - "nginx"
+      - "ssl"
+  tasks:
+    ###########################################################################
+    # STEP 1: Copy files to swarm  workers
+    ###########################################################################
+
+    - name: Create directory structure for volumes
+      file:
+        path: "{{ volume_main_data_path }}/{{ item }}"
+        state: directory
+        owner: "{{ dockeruser }}"
+        group: "{{ dockeruser }}"
+        mode: "0755"
+      loop: "{{ directories }}"
+
+    - name: Copy Nginx configuration file (funkwhale.config) to the node
+      copy:
+        src: funkwhale.conf
+        dest: "{{ volume_main_data_path }}/nginx/funkwhale.conf"
+        owner: "{{ dockeruser }}"
+        group: "{{ dockeruser }}"
+        mode: "0644"
+
+    - name: Copy Nginx proxy configuration file (funkwhale_proxy.conf) to the node
+      copy:
+        src: funkwhale_proxy.conf
+        dest: "{{ volume_main_data_path }}/nginx/funkwhale_proxy.conf"
+        owner: "{{ dockeruser }}"
+        group: "{{ dockeruser }}"
+        mode: "0644"
+
+   # - name: Copy TLS certificate file to the node
+    #  copy:
+    #   src: "{{tls_crt}}/play.fedlab.xyz-crt"
+    #    dest: "{{ volume_main_data_path }}/ssl/play.fedlab.xyz-crt"
+    #    owner: "{{ dockeruser }}"
+    #    group: "{{ dockeruser }}"
+    #    mode: "0644"
+
+    #- name: Copy TLS key file to the node
+    #  copy:
+    #    src: "{{tls_key}}/play.fedlab.xyz-key"
+    #    dest: "{{ volume_main_data_path }}/ssl/play.fedlab.xyz-key"
+    #    owner: "{{ dockeruser }}"
+    #    group: "{{ dockeruser }}"
+    #   mode: "0600"

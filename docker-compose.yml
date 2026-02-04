@@ -1,0 +1,196 @@
+services:
+  # postgres:
+  #   restart: unless-stopped
+  #   env_file: .env
+  #   environment:
+  #     - "POSTGRES_HOST_AUTH_METHOD=trust"
+  #   image: postgres:15-alpine
+  #   volumes:
+  #     - ${VOLUME_MAIN_DATA_PATH}/data/postgres:/var/lib/postgresql/data
+  #   deploy:
+  #     placement:
+  #       constraints:
+  #         - node.role == worker
+  #   networks:
+  #     - playfunkwhalexyz
+
+  redis:
+    restart: unless-stopped
+    env_file: .env
+    image: redis:7-alpine
+    volumes:
+      - ${VOLUME_MAIN_DATA_PATH}/data/redis:/data
+    networks:
+      - playfunkwhalexyz
+
+  celeryworker:
+    restart: unless-stopped
+    image: funkwhale/api:${FUNKWHALE_VERSION:-latest}
+    depends_on:
+    #  - postgres
+      - redis
+    env_file: .env
+    command:
+      - celery
+      - --app=funkwhale_api.taskapp
+      - worker
+      - --loglevel=INFO
+      - --concurrency=${CELERYD_CONCURRENCY-0}
+    environment:
+      - C_FORCE_ROOT=true
+      - DATABASE_URL=postgresql://replicator:pgcluster_replicator_password@postgres-primary:5432/mydatabase
+    volumes:
+      - "${MUSIC_DIRECTORY_SERVE_PATH}:${MUSIC_DIRECTORY_PATH-/music}:ro"
+      - "${MEDIA_ROOT}:${MEDIA_ROOT}"
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+    networks:
+      - playfunkwhalexyz
+      - pgcluster_postgres-cluster-net
+    secrets:
+    - pgcluster_replicator_password
+
+  celerybeat:
+    restart: unless-stopped
+    image: funkwhale/api:${FUNKWHALE_VERSION:-latest}
+    command:
+      - celery
+      - --app=funkwhale_api.taskapp
+      - beat
+      - --loglevel=INFO
+    depends_on:
+     # - postgres
+      - redis
+    env_file: .env
+    environment:
+    - DATABASE_URL=postgresql://replicator:pgcluster_replicator_password@postgres-primary:5432/mydatabase
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+    networks:
+      - playfunkwhalexyz
+      - pgcluster_postgres-cluster-net
+    secrets:
+    - pgcluster_replicator_password
+
+  api:
+    restart: unless-stopped
+    image: funkwhale/api:${FUNKWHALE_VERSION:-latest}
+    depends_on:
+     # - postgres
+      - redis
+    env_file: .env
+    environment:
+      - "MEDIA_ROOT=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/media" 
+      - "MUSIC_DIRECTORY_SERVE_PATH=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/music" 
+      - "STATIC_ROOT=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/static"
+      - DATABASE_URL=postgresql://replicator:pgcluster_replicator_password@postgres-primary:5432/mydatabase
+    volumes:
+      - "${MUSIC_DIRECTORY_SERVE_PATH-/srv/funkwhale/data/music}:${MUSIC_DIRECTORY_PATH-/music}:ro"
+      - "${MEDIA_ROOT}:${MEDIA_ROOT}"
+      - "${STATIC_ROOT}:${STATIC_ROOT}"
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+    networks:
+      - playfunkwhalexyz
+      - pgcluster_postgres-cluster-net
+    secrets:
+    - pgcluster_replicator_password
+
+  front:
+    restart: unless-stopped
+    image: funkwhale/front:${FUNKWHALE_VERSION:-latest}
+    depends_on:
+      - api
+    env_file:
+      - .env
+    environment:
+      - "MEDIA_ROOT=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/media" 
+      - "MUSIC_DIRECTORY_PATH=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/music" 
+    volumes:
+      - "${MUSIC_DIRECTORY_SERVE_PATH}:${MUSIC_DIRECTORY_PATH-/music}:ro"
+      - "${MEDIA_ROOT}:${MEDIA_ROOT}:ro"
+      - "${STATIC_ROOT}:/usr/share/nginx/html/staticfiles:ro"
+    ports:
+      - "${FUNKWHALE_API_IP}:8090:80"
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+    networks:
+      - playfunkwhalexyz
+
+  typesense:
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+    - TYPESENSE_API_KEY=${TYPESENSE_API_KEY}
+    - TYPESENSE_DATA_DIR=/data
+    image: typesense/typesense:0.24.0
+    volumes:
+      - "${VOLUME_MAIN_DATA_PATH}/data/typesense/data:/data"
+    command: --data-dir /data --enable-cors
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+    networks:
+      - playfunkwhalexyz
+
+  setup:
+    image: funkwhale/api:${FUNKWHALE_VERSION:-latest}
+    restart: "no"
+    env_file: .env
+    environment:
+      - "FUNKWHALE_USERNAME=${FUNKWHALE_USERNAME}"
+      - "FUNKWHALE_CLI_USER_PASSWORD=${FUNKWHALE_PASSWORD}"
+      - "FUNKWHALE_EMAIL=${FUNKWHALE_EMAIL}"
+      - DATABASE_URL=postgresql://replicator:pgcluster_replicator_password@postgres-primary:5432/mydatabase
+    command: >
+      sh -c "
+        echo 'Running migrations with retry...';
+        until funkwhale-manage migrate; do
+          echo 'Retrying migrations...';
+          sleep 5
+        done;
+
+        echo 'Creating superuser...';
+        funkwhale-manage fw users create --username $FUNKWHALE_USERNAME --email $FUNKWHALE_EMAIL --superuser
+      "
+    depends_on:
+     # - postgres
+      - api
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+    networks:
+      - playfunkwhalexyz
+      - pgcluster_postgres-cluster-net
+    volumes:
+      - "${MUSIC_DIRECTORY_SERVE_PATH}:${MUSIC_DIRECTORY_PATH-/music}:ro"
+      - "${MEDIA_ROOT}:${MEDIA_ROOT}"
+      - "${STATIC_ROOT}:${STATIC_ROOT}"
+    secrets:
+    - pgcluster_replicator_password
+
+networks:
+  playfunkwhalexyz:
+    driver: overlay 
+  pgcluster_postgres-cluster-net:
+    external: true
+
+secrets:
+  postgres_root_password:
+    external: true
+  pgcluster_replicator_password:
+    external: true
+  repmgr_password:
+    external: true
+
