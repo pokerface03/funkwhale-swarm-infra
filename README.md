@@ -1,5 +1,7 @@
 # Project Funkwhale swarm infra
 
+This project is about the deployment of the open-source platform Funkwhale on Docker Swarm
+
 **Created by:** pokerface03
 
 ## Table of Contents
