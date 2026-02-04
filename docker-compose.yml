@@ -113,6 +113,12 @@ services:
       - "MEDIA_ROOT=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/media" 
       - "MUSIC_DIRECTORY_PATH=${VOLUME_MAIN_DATA_PATH}/funkwhale/data/music" 
     volumes:
+      # Uncomment if you want to use your nginx config, please let us
+      # know what special configuration you need, so we can support it with out
+      # upstream nginx configuration!
+      #- "./nginx/funkwhale.conf:etc/nginx/conf.d/default.conf:ro"
+      #- "./nginx/funkwhale_proxy.conf:/etc/nginx/funkwhale_proxy.conf:ro"
+
       - "${MUSIC_DIRECTORY_SERVE_PATH}:${MUSIC_DIRECTORY_PATH-/music}:ro"
       - "${MEDIA_ROOT}:${MEDIA_ROOT}:ro"
       - "${STATIC_ROOT}:/usr/share/nginx/html/staticfiles:ro"
